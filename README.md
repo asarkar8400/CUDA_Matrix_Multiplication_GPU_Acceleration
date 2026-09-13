@@ -1,6 +1,6 @@
-# CUDA Matrix Multiplication — GPU Acceleration
+# CUDA Matrix Multiplication GPU Acceleration
 
-This repo implements matrix multiplication (SGEMM: `C = α·A·B + β·C`) in CUDA across five progressively optimized kernels — from a naive baseline to 2D block tiling — and benchmarks each against the others to show where the speedup actually comes from.
+This repo implements matrix multiplication (SGEMM: `C = α·A·B + β·C`) in CUDA across five progressively optimized kernels  from a naive baseline to 2D block tiling  and benchmarks each against the others to show where the speedup actually comes from.
 
 | Kernel | Speedup vs. naive |
 |---|---|
@@ -10,7 +10,7 @@ This repo implements matrix multiplication (SGEMM: `C = α·A·B + β·C`) in CU
 | Same-size tiled (16x16) | ~15-25x |
 | General 2D block tiling | ~20-30x+ |
 
-(Relative speedups depend heavily on your GPU — see [Benchmarking](#benchmarking) for how to generate your own numbers. The project description reports **over 1000x speedup versus a CPU implementation**.)
+(Relative speedups depend heavily on your GPU see [Benchmarking](#benchmarking) for how to generate your own numbers. The project description reports **over 1000x speedup versus a CPU implementation**.)
 
 ---
 
@@ -34,14 +34,14 @@ Matrix multiplication is a perfect fit for this model: computing each output ele
 
 ### The CPU → GPU workflow (used in every file in this repo)
 
-1. **Allocate memory on the GPU** (`cudaMalloc`) — the CPU ("host") and GPU ("device") have physically separate memory, so the GPU needs its own buffers.
-2. **Copy input data from host to device** (`cudaMemcpy(..., cudaMemcpyHostToDevice)`) — matrices `A` and `B` are generated on the CPU and shipped over the PCIe bus to the GPU.
-3. **Launch a kernel** (`kernel<<<gridDim, blockDim>>>(...)`) — this is a function that runs on the GPU, but you don't call it once — you launch it across a whole grid of threads, and every thread runs the same kernel code on its own slice of the data.
-4. **Synchronize** (`cudaDeviceSynchronize()`) — kernel launches are asynchronous from the CPU's perspective, so this blocks until the GPU finishes.
+1. **Allocate memory on the GPU** (`cudaMalloc`)  the CPU ("host") and GPU ("device") have physically separate memory, so the GPU needs its own buffers.
+2. **Copy input data from host to device** (`cudaMemcpy(..., cudaMemcpyHostToDevice)`)  matrices `A` and `B` are generated on the CPU and shipped over the PCIe bus to the GPU.
+3. **Launch a kernel** (`kernel<<<gridDim, blockDim>>>(...)`)  this is a function that runs on the GPU, but you don't call it once  you launch it across a whole grid of threads, and every thread runs the same kernel code on its own slice of the data.
+4. **Synchronize** (`cudaDeviceSynchronize()`)  kernel launches are asynchronous from the CPU's perspective, so this blocks until the GPU finishes.
 5. **Copy results back** (`cudaMemcpyDeviceToHost`).
 6. **Free memory** (`cudaFree`, `free`).
 
-This host/device round-trip is why GPU acceleration is worth it only when there's *enough work* to hide the cost of steps 1–2 and 5 — small matrices might actually be slower on a GPU than a CPU because of this overhead.
+This host/device round-trip is why GPU acceleration is worth it only when there's *enough work* to hide the cost of steps 1–2 and 5  small matrices might actually be slower on a GPU than a CPU because of this overhead.
 
 ---
 
@@ -50,7 +50,7 @@ This host/device round-trip is why GPU acceleration is worth it only when there'
 CUDA organizes parallel work into a 3-level hierarchy. Every kernel launch in this repo uses the `<<<gridDim, blockDim>>>` syntax to define this hierarchy:
 
 ```
-GRID  (the whole problem — e.g. the entire output matrix C)
+GRID  (the whole problem  e.g. the entire output matrix C)
  └── BLOCK  (a tile of the problem, e.g. a 32x32 chunk of C)
       └── THREAD  (one unit of work, e.g. computing a single C[row][col])
 ```
@@ -90,21 +90,21 @@ int row    = blockIdx.y * blockDim.y + threadIdx.y;
 int column = blockIdx.x * blockDim.x + threadIdx.x;
 ```
 
-- `blockIdx` — which block am I in? (position in the grid)
-- `blockDim` — how big is each block? (e.g. 32x32 threads)
-- `threadIdx` — where am I inside my block?
+- `blockIdx`  which block am I in? (position in the grid)
+- `blockDim`  how big is each block? (e.g. 32x32 threads)
+- `threadIdx`  where am I inside my block?
 
-This single line is the mental model for *every* kernel in this repo — it's how a flat launch of thousands of threads maps back onto 2D matrix coordinates.
+This single line is the mental model for *every* kernel in this repo  it's how a flat launch of thousands of threads maps back onto 2D matrix coordinates.
 
-### Warps — the real unit of execution
+### Warps  the real unit of execution
 
-Threads inside a block are actually scheduled in groups of **32 called a warp**. All 32 threads in a warp execute the same instruction in lockstep. This detail matters a lot for performance — it's the entire reason the "memory coalescing" kernel in this repo exists (see below): if the 32 threads in a warp access scattered memory addresses, the hardware has to issue multiple slow memory transactions instead of one fast one.
+Threads inside a block are actually scheduled in groups of **32 called a warp**. All 32 threads in a warp execute the same instruction in lockstep. This detail matters a lot for performance  it's the entire reason the "memory coalescing" kernel in this repo exists (see below): if the 32 threads in a warp access scattered memory addresses, the hardware has to issue multiple slow memory transactions instead of one fast one.
 
 ### Visualizing it yourself
 
 - **Nsight Compute / Nsight Systems** (NVIDIA's free profilers) will show you real occupancy, warp execution, and memory throughput for these kernels.
 - `compute-sanitizer` can catch out-of-bounds thread accesses.
-- Conceptually, the ASCII diagram above *is* the visualization — draw the output matrix, chop it into blocks, and shrink each block into a grid of threads.
+- Conceptually, the ASCII diagram above *is* the visualization  draw the output matrix, chop it into blocks, and shrink each block into a grid of threads.
 
 ---
 
@@ -127,15 +127,15 @@ Every kernel needs data from `A` and `B`, which live in slow **global memory**. 
 
 All five files are standalone, self-contained `.cu` programs. Each one: generates random `M x K` and `K x N` matrices, times 3 warm-up kernel launches, then benchmarks 20 timed launches and prints the average runtime. This makes them directly comparable to each other.
 
-### `SGEMM.cu` — Naive Baseline
+### `SGEMM.cu`  Naive Baseline
 
 The simplest possible GPU implementation, and the reference point every other file is measured against.
 
 - Each thread computes exactly one output element `C[row][col]` by looping over the full `k` dimension and doing a straight dot product, reading directly from global memory every single time.
-- **Why it's slow:** every one of the `k` multiply-adds per thread issues a fresh global memory read for both `A` and `B` — no reuse, no caching. With 32x32 = 1024 threads per block all hammering global memory independently, the memory bus becomes the bottleneck, not the math.
+- **Why it's slow:** every one of the `k` multiply-adds per thread issues a fresh global memory read for both `A` and `B`  no reuse, no caching. With 32x32 = 1024 threads per block all hammering global memory independently, the memory bus becomes the bottleneck, not the math.
 - **Benefit of this file:** it's the control group. Nothing here is wrong, but it establishes the "before" picture so the other four kernels' improvements are measurable and explainable.
 
-### `Global_Memory_Coalescing_MM.cu` — Memory Coalescing
+### `Global_Memory_Coalescing_MM.cu`  Memory Coalescing
 
 Same basic per-thread-one-output algorithm, but the way threads are mapped to memory addresses changes:
 
@@ -146,32 +146,32 @@ const int column = blockIdx.y * BLOCK_SIZE + (threadIdx.x % BLOCK_SIZE);
 
 - Instead of using a 2D `threadIdx.(x,y)`, this flattens thread indexing so that **consecutive threads in a warp read consecutive addresses in memory** (adjacent `column` values for `B`). This lets the GPU merge, or "coalesce," many individual thread memory requests into one wide, efficient transaction instead of dozens of small scattered ones.
 - Also introduces the general SGEMM signature `C = α·(A·B) + β·C`, matching how real BLAS libraries (like cuBLAS) define the operation.
-- **Benefit:** free performance from *only* changing memory access patterns — no algorithmic change, no extra memory used. This demonstrates that *how* you read memory matters as much as *what* you compute.
+- **Benefit:** free performance from *only* changing memory access patterns  no algorithmic change, no extra memory used. This demonstrates that *how* you read memory matters as much as *what* you compute.
 
-### `Shared_Memory_Cache_Blocking.cu` — Shared Memory Caching
+### `Shared_Memory_Cache_Blocking.cu`  Shared Memory Caching
 
 This is where the algorithm itself changes, not just the memory access pattern.
 
-- Declares `__shared__ float shA[...]` and `shB[...]` — small, fast, on-chip memory shared by every thread in a block.
+- Declares `__shared__ float shA[...]` and `shB[...]`  small, fast, on-chip memory shared by every thread in a block.
 - Each block cooperatively loads a `BLOCK_SIZE x BLOCK_SIZE` tile of `A` and `B` from slow global memory into fast shared memory **once**, calls `__syncthreads()` to make sure every thread has finished loading before anyone starts computing, then every thread in the block reuses that cached tile to accumulate a partial dot product. The loop slides across `K` in `BLOCK_SIZE`-sized chunks, repeating load → sync → compute → sync.
-- **Why it's much faster:** each value loaded from global memory is now reused `BLOCK_SIZE` times (by every thread in the row/column that needs it) instead of being re-fetched from global memory by every single thread that needs it. This is the single biggest lever in GEMM optimization — cutting global memory traffic by roughly a factor of `BLOCK_SIZE`.
-- **Benefit:** dramatically reduces global memory bandwidth pressure, which is almost always the real bottleneck in GPU compute — not arithmetic throughput.
+- **Why it's much faster:** each value loaded from global memory is now reused `BLOCK_SIZE` times (by every thread in the row/column that needs it) instead of being re-fetched from global memory by every single thread that needs it. This is the single biggest lever in GEMM optimization  cutting global memory traffic by roughly a factor of `BLOCK_SIZE`.
+- **Benefit:** dramatically reduces global memory bandwidth pressure, which is almost always the real bottleneck in GPU compute  not arithmetic throughput.
 
-### `Same_Size_Tiled_Matrix_Multiplication.cu` — 2D Tiling (Square Matrices)
+### `Same_Size_Tiled_Matrix_Multiplication.cu`  2D Tiling (Square Matrices)
 
 Builds on shared-memory caching with a cleaner, more general tiling loop, but restricted to square `N x N` matrices.
 
 - Uses explicit 2D shared memory arrays (`shA[TILE_SIZE][TILE_SIZE]`) rather than flattened 1D arrays, which is more readable and maps directly onto `threadIdx.x` / `threadIdx.y`.
-- Adds **boundary checking** (`if (row < N) ... else shA[ty][tx] = 0.0f`) so tiles that don't perfectly divide the matrix size still work safely — the earlier files assume dimensions divide evenly by `BLOCK_SIZE`.
-- **Benefit:** demonstrates the tiling pattern in its clearest, most textbook form — a good file to read first if you want to understand the *shape* of the algorithm before the more general/optimized versions.
+- Adds **boundary checking** (`if (row < N) ... else shA[ty][tx] = 0.0f`) so tiles that don't perfectly divide the matrix size still work safely  the earlier files assume dimensions divide evenly by `BLOCK_SIZE`.
+- **Benefit:** demonstrates the tiling pattern in its clearest, most textbook form  a good file to read first if you want to understand the *shape* of the algorithm before the more general/optimized versions.
 
-### `General_2D_BlockTiled_MM.cu` — Generalized 2D Block Tiling
+### `General_2D_BlockTiled_MM.cu`  Generalized 2D Block Tiling
 
 The most complete and production-realistic kernel in the repo.
 
 - Identical tiling structure to the file above, but generalized to **arbitrary, non-square dimensions** (`M x K` times `K x N`), using `ceil((float)k / TILE_SIZE)` to correctly handle any matrix size, not just ones that divide evenly.
 - Adds boundary checks on *both* the load step and the final write (`if ((row < m) && (column < n))`), so it's safe for real-world matrix shapes where `M`, `K`, `N` aren't multiples of the tile size.
-- **Benefit:** this is the kernel you'd actually adapt for a real application — it keeps all the shared-memory reuse benefits above while removing the "must be square / must divide evenly" restriction, at the cost of a few extra branch checks per thread.
+- **Benefit:** this is the kernel you'd actually adapt for a real application  it keeps all the shared-memory reuse benefits above while removing the "must be square / must divide evenly" restriction, at the cost of a few extra branch checks per thread.
 
 ### Progression at a glance
 
@@ -232,8 +232,8 @@ Each file already contains its own benchmark harness (3 warm-up launches + 20 ti
 
 A quick-reference glossary for the ideas used across these files:
 
-- **Coalesced memory access** — arranging thread-to-data mapping so consecutive threads read consecutive memory addresses, letting the hardware combine many small reads into one large, efficient transaction.
-- **Shared memory tiling** — cooperatively loading a small block of the input matrices into fast on-chip shared memory once, then having every thread in the block reuse it, instead of every thread re-reading from slow global memory.
-- **`__syncthreads()`** — a barrier that forces every thread in a block to wait until all threads reach that point. Essential after loading into shared memory (so no thread starts computing with a half-filled tile) and after computing (so no thread overwrites shared memory that others still need).
-- **Occupancy** — how many warps are actively resident on a streaming multiprocessor at once. Higher occupancy generally means better latency hiding, but using more shared memory or registers per thread can lower it — a trade-off implicit in choosing `BLOCK_SIZE`/`TILE_SIZE`.
-- **Boundary checking** — guarding array accesses with `if (row < M && col < N)` so kernels don't read/write out of bounds when matrix dimensions aren't exact multiples of the block/tile size.
+- **Coalesced memory access**  arranging thread-to-data mapping so consecutive threads read consecutive memory addresses, letting the hardware combine many small reads into one large, efficient transaction.
+- **Shared memory tiling**  cooperatively loading a small block of the input matrices into fast on-chip shared memory once, then having every thread in the block reuse it, instead of every thread re-reading from slow global memory.
+- **`__syncthreads()`**  a barrier that forces every thread in a block to wait until all threads reach that point. Essential after loading into shared memory (so no thread starts computing with a half-filled tile) and after computing (so no thread overwrites shared memory that others still need).
+- **Occupancy**  how many warps are actively resident on a streaming multiprocessor at once. Higher occupancy generally means better latency hiding, but using more shared memory or registers per thread can lower it  a trade-off implicit in choosing `BLOCK_SIZE`/`TILE_SIZE`.
+- **Boundary checking**  guarding array accesses with `if (row < M && col < N)` so kernels don't read/write out of bounds when matrix dimensions aren't exact multiples of the block/tile size.
